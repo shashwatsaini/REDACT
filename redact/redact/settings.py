@@ -133,6 +133,8 @@ with open(os.path.join(BASE_DIR, 'app', 'services', 'service_keys.json')) as f:
     json_data = json.load(f)
     AZURE_DI_KEY = json_data['AZURE_DI_KEY']
     AZURE_DI_ENDPOINT = json_data['AZURE_DI_ENDPOINT']
+    AZURE_CS_KEY = json_data['AZURE_CS_KEY']
+    AZURE_CS_ENDPOINT = json_data['AZURE_CS_ENDPOINT']
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')

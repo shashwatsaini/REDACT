@@ -1,13 +1,13 @@
 import os
 import time
-from django.shortcuts import render, redirect
+from django.core.files.storage import default_storage
+from django.core.files.base import ContentFile
 from django.http import JsonResponse
+from django.shortcuts import render, redirect
+from django.utils.text import slugify
 from .services.model_service import TextRedactionService, ImageRedactionService, PDFRedactionService
 from .services.model_training import train_model
 from django.conf import settings
-from django.utils.text import slugify
-from django.core.files.storage import default_storage
-from django.core.files.base import ContentFile
 import re
 
 def handle_uploaded_file(file):
@@ -15,7 +15,10 @@ def handle_uploaded_file(file):
         return text_file_to_string(file)
 
 def save_image_file(file):
-    file_name = default_storage.save(f'uploads/{file.name}', ContentFile(file.read()))
+    file_path = f'uploads/{file.name}'
+    if default_storage.exists(file_path):
+        default_storage.delete(file_path)
+    file_name = default_storage.save(file_path, ContentFile(file.read()))
     file_url = default_storage.url(file_name)
     return file.name
 
@@ -84,6 +87,10 @@ def index(request):
                     service = TextRedactionService(degree, guardrail_toggle)
                     redacted_text, agents_speech = service.redact_text(file_text, regexPattern, wordsToRemove)
 
+                    # Check for content safety flag
+                    if redacted_text == 'flag':
+                        return render(request, 'index.html', {'flag': 'The data you submitted was flagged for content safety violations.'})
+
                     redacted_text = re.sub(r'\*(.*?)\*', lambda match: '█' * len(match.group(1)), redacted_text)
                     redacted_file_url = save_redacted_file(redacted_text, file.name)
                     return render(request, 'index.html', {'redacted_text': redacted_text, 'redacted_file_url': redacted_file_url, 'agents_speech': agents_speech})
@@ -95,6 +102,10 @@ def index(request):
 
                     service = ImageRedactionService(degree, guardrail_toggle)
                     redacted_image_url, agents_speech = service.redact_image(image_url, regexPattern, wordsToRemove)
+
+                    # Check for content safety flag
+                    if redacted_image_url == 'flag':
+                        return render(request, 'index.html', {'flag': 'The data you submitted was flagged for content safety violations.'})
 
                     redacted_image_url = redacted_image_url.replace(settings.MEDIA_ROOT, settings.MEDIA_URL)
                     print(redacted_image_url)
@@ -110,36 +121,15 @@ def index(request):
 
                     return render(request, 'index.html', {'redacted_file_url': redacted_file_url, 'agents_speech': agents_speech})
                 
-                elif is_video_file(file.name):
-                    # Hardcoded video file path
-                    time.sleep(15)
-                    hardcoded_video_url = os.path.join(settings.BASE_DIR, 'media', 'outputs', 'meeting_redacted.mp4')
-                    hardcoded_video_url = hardcoded_video_url.replace(settings.MEDIA_ROOT, settings.MEDIA_URL)
-                    print(hardcoded_video_url)
-
-                    agents_speech = []
-                    agents_speech.append('<h4>assistant</h4>')
-                    agents_speech.append('<p>Task: Initial text and face detection.</p>')
-                    agents_speech.append('<p>Using Azure Video Indexer to scan the video for OCR content and faces.</p>')
-                    agents_speech.append('<p>Detected Faces: {"speakers":[{"id":1,"name":"Speaker #1","instances":[{"adjustedStart":"0:00:05.16","adjustedEnd":"0:00:11","start":"0:00:05.16","end":"0:00:11"},{"adjustedStart":"0:00:46.77","adjustedEnd":"0:00:46.89","start":"0:00:46.77","end":"0:00:46.89"}]},{"id":2,"name":"Speaker #2","instances":[{"adjustedStart":"0:00:12.8","adjustedEnd":"0:00:14.12","start":"0:00:12.8","end":"0:00:14.12"} ...</p>')
-                    agents_speech.append('<p>Detected Text: {"ocr":[{"text": "Challenge?", "confidence": 0.914}, {"text": "DELIVER", "confidence": 0.977}, {"text": "Added", "confidence": 0.987}, {"text": "Team", "confidence": 0.987}, ... </p>')
-                    agents_speech.append('<p>Recommended Redactions: Blur all faces. No sensitive text found, no text redaction needed.</p>')
-
-                    agents_speech.append('<h4>evaluation-agent</h4>')
-                    agents_speech.append('<p>Task: Evaluate Assistant\'s output and recommend refinements for sensitive information and context relevance.</p>')
-                    agents_speech.append('<p>Faces: Face 1: Blur recommended. Face 2: Blur recommended. Face 3: Blur recommended. Face 4: Blur recommended. Face 5: Blur recommended ...</p>')
-                    agents_speech.append('<p>Text: No sensitive text found. No text redaction needed.</p>')
-
-                    agents_speech.append('<h4>assistant</h4>')
-                    agents_speech.append('<p>Task: Applying redactions based on Evaluator\'s feedback.</p>.</p>')
-
-                    return render(request, 'index.html', {'redacted_video_url': hardcoded_video_url, 'agents_speech': agents_speech})
-
         elif form_data.get('wordsTextarea'):
             # Redacts text from textarea
             user_text = form_data['wordsTextarea']
             service = TextRedactionService(degree, guardrail_toggle)
             redacted_text, agents_speech = service.redact_text(user_text, regexPattern, wordsToRemove)
+
+            # Check for content safety flag
+            if redacted_text == 'flag':
+                return render(request, 'index.html', {'flag': 'The data you submitted was flagged for content safety violations.'})
 
             redacted_text = re.sub(r'\*(.*?)\*', lambda match: '█' * len(match.group(1)), redacted_text)
             return render(request, 'index.html', {'redacted_text': redacted_text, 'agents_speech': agents_speech})

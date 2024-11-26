@@ -1,11 +1,29 @@
 from .agents import TextRedactionAgents, ImageRedactionAgents, PDFRedactionAgents
-from .guardrails import guardrail_proper_nouns, guardrail_numbers, guardrail_urls, guardrail_emails
+from .guardrails import guardrail_azure_cs_text, guardrail_azure_cs_image, guardrail_proper_nouns, guardrail_numbers, guardrail_urls, guardrail_emails
 from .db_service import uploadOutputDB
 from .utils import azure_image_ocr, azure_pdf_ocr, match_regexPattern, export_redacted_image, export_redacted_pdf
-from ultralytics import YOLO
 from django.conf import settings
 
 class TextRedactionService:
+    """
+        The service for redacting text and text files.
+
+        __init___ inputs:
+            degree: Degree of redaction, as selected by client.
+            guardrail_toggle: Whether guardrails should be turned on or not, default is 1.
+        __init__ output:
+            A TextRedactionService object.
+
+        redact_text inputs:
+            text: Entered by the client.
+            regexPattern: Custom regex pattern, if entered by the client.
+            wordsToRemove: Custom words to redact, if entered by the client.
+        redact_text outputs:
+            redacted_text: Final redacted text.
+            agents_speech: Steps carried by agents and guardrails, to establish a logical flow for the client.
+
+    """
+
     def __init__(self, degree=0, guardrail_toggle=1):
         self.degree = degree
         self.guardrail_toggle = 0
@@ -23,6 +41,10 @@ class TextRedactionService:
         redacted_list = []
         redacted_list_from_agent = [] + [j for i in wordsToRemove for j in i.split()]
         output_db_list = [] # Storing outputs for improving models
+
+        content_safety_flag = guardrail_azure_cs_text(word_list)
+        if content_safety_flag:
+            return 'flag', []
 
         raw_redacted_list_from_agent = self.assistant(text, aggregation_strategy="first")
         for entity in raw_redacted_list_from_agent:
@@ -90,6 +112,24 @@ class TextRedactionService:
 
 
 class ImageRedactionService:
+    '''
+        The service for redacting text and faces in images.
+
+        __init___ inputs:
+            degree: Degree of redaction, as selected by client.
+            guardrail_toggle: Whether guardrails should be turned on or not, default is 1.
+        __init__ output:
+            An ImageRedactionService object.
+
+        redact_image inputs:
+            image: Inputted by the client.
+            regexPattern: Custom regex pattern, if entered by the client.
+            wordsToRemove: Custom words to redact, if entered by the client.
+        redact_image outputs:
+            output_path: Path to the redacted image.
+            agents_speech: Steps carried by agents and guardrails, to establish a logical flow for the client.
+
+    '''
     def __init__(self, degree=0, guardrail_toggle=1):
         self.degree = degree
         self.guardrail_toggle = 0
@@ -108,6 +148,10 @@ class ImageRedactionService:
         word_list = result.content.split()
         redacted_list = []
         output_db_list = [] # Storing outputs for improving models
+
+        content_safety_flag = guardrail_azure_cs_image(image)
+        if content_safety_flag:
+            return 'flag', []
 
         raw_redacted_list_from_agent = self.assistant(result.content, aggregation_strategy="first")
         redacted_list_from_agent = [] + [j for i in wordsToRemove for j in i.split()]
@@ -210,6 +254,25 @@ class ImageRedactionService:
     
     
 class PDFRedactionService:
+    """
+        The service for redacting PDF files.
+
+        __init___ inputs:
+            degree: Degree of redaction, as selected by client.
+            guardrail_toggle: Whether guardrails should be turned on or not, default is 1.
+        __init__ output:
+            A PDFRedactionService object.
+
+        redact_pdf inputs:
+            pdf: Entered by the client.
+            regexPattern: Custom regex pattern, if entered by the client.
+            wordsToRemove: Custom words to redact, if entered by the client.
+        redact_text outputs:
+            output_path: Path to the redacted pdf.
+            agents_speech: Steps carried by agents and guardrails, to establish a logical flow for the client.
+
+    """
+
     def __init__(self, degree=0, guardrail_toggle=1):
         self.degree = degree
         self.guardrail_toggle = 0
@@ -228,6 +291,10 @@ class PDFRedactionService:
         redacted_list = []
         output_db_list = [] # Stores outputs for improvingm models
         redacted_list_from_agent = [] + [j for i in wordsToRemove for j in i.split()]
+
+        content_safety_flag = guardrail_azure_cs_text(word_list)
+        if content_safety_flag:
+            return 'flag', []
 
         for page in result.pages:
             raw_redacted_list_from_agent_page = self.assistant(" ".join([line.content for line in page.lines]), aggregation_strategy="first")
