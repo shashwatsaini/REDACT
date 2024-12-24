@@ -141,9 +141,6 @@ def index(request):
         return render(request, 'index.html', {'training_complete': True, 'train_runtime': request.GET.get('runtime'), 'train_loss': request.GET.get('loss')})
     return render(request, 'index.html', {'redacted_text': None})
 
-def studio(request):
-    return render(request,"studio.html")
-
 def begin_training(request):
     metrics = train_model()
     return redirect(f"/?training_complete=true&runtime={metrics['train_runtime']}&loss={metrics['train_loss']}")

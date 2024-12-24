@@ -18,11 +18,10 @@
     <!-- Navbar -->
     <nav class="navbar navbar-expand-lg navbar-light" style="background: radial-gradient( rgb(19, 30, 37) 24.5%, rgb(19, 30, 37) 66%); margin-bottom: 0px; margin-top: 12px;">
         <div class="container-fluid">
-            <a class="navbar-brand text-start" href="#" style="color: white; font-size: 24px;">  <img src="{% static 'images/arrow-up.png' %}" alt="Arrow Up" style="margin-right: 4px;"> Re-Dact </a>
-            <div class="navbar-brand mx-auto" style="color: white; font-size: 24px;">
-                An AI-powered redaction tool that offers complete control with ease
+            <a class="navbar-brand text-start" href="#" style="color: white; font-size: 24px;">  <img src="{% static 'images/arrow-up.png' %}" alt="Arrow Up" style="margin-right: 4px; margin-bottom: 5px;"> Re-Dact </a>
+            <div class="navbar-brand" style="color: white; font-size: 24px;">
+                An AI-powered redaction service.
             </div>
-            <a class="navbar-brand text-end w-150" href="/studio/" style="color: white; font-size: 24px;"> Studio </a>
         </div>
     </nav>
 
@@ -44,7 +43,7 @@
 
                         <div class="mb-3 mt-4 d-flex justify-content-center" style="padding-bottom: 8px; margin-bottom: 8px;">
                             <input type="hidden" name="storeData" value="0">
-                            <input class="form-check-input" type="checkbox" id="storeDataSwitch" name="storeData" value="1" checked style="transform: scale(1.5); width: 40px; height: 20px;" disabled>
+                            <input class="form-check-input" type="checkbox" id="storeDataSwitch" name="storeData" value="1" checked style="transform: scale(1.5); width: 40px; height: 20px; background-color: #28a745;" disabled>
                         </div>  
 
                         <div class="mb-3 mt-4" style="margin-left: -40px;">
@@ -53,7 +52,7 @@
 
                         <div class="mb-3 mt-4 d-flex justify-content-center" style="padding-bottom: 8px; margin-bottom: 8px;">
                             <input type="hidden" name="guardrails" value="0">
-                            <input class="form-check-input" type="checkbox" id="guardrailsSwitch" name="guardrails" value="1" checked style="transform: scale(1.5); width: 40px; height: 20px;">
+                            <input class="form-check-input" type="checkbox" id="guardrailsSwitch" name="guardrails" value="1" checked style="transform: scale(1.5); width: 40px; height: 20px; background-color: #28a745;" disabled>
                         </div>
 
                         <div class="mb-3 mt-4" style="margin-left: -40px;">
@@ -66,10 +65,10 @@
                             <input type="text" class="form-control" id="regexPattern" name="regexPattern" placeholder="Enter regex pattern">
                         </div>
 
-                        <!--Temporary Training Button Placement-->
+                        <!-- Training Button -->
                         <div class="mb-3 text-center" style="margin-left: -40px;">
                             <label for="trainModel" class="form-label">Train Model <i class="info-icon" data-bs-toggle="tooltip" data-bs-placement="right" title="Trains the LLM on your inputs. No data is uploaded.">i</i></label>
-                            <button type="button" class="btn btn-primary btn-lg" style="width: 200px;" onclick="window.location.href='/training';">Begin Training</button>
+                            <button type="button" class="btn btn-primary btn-lg" style="width: 200px; background-color: #28a745;" onclick="window.location.href='/training';">Begin Training</button>
                         </div>                      
                     </form>
                 </div>
@@ -184,8 +183,8 @@
             </div>
 
             <!-- Output Section -->
-            <br>
             {% if redacted_text or redacted_file_url or redacted_image_url or redacted_video_url %}
+            <br><br>
             <div class="card dark-card text-white p-4 mx-auto d-flex justify-content-center align-items-center" style="max-width: 1200px;">
                 {% if redacted_text %}
                 <div class="col-12 text-center" style="padding: 20px;">
@@ -275,8 +274,14 @@
         </div>
     </div>
          
-
     <br><br>
+
+    <!-- Footer -->
+    <footer style="background: radial-gradient( rgb(19, 30, 37) 24.5%, rgb(19, 30, 37) 66%); margin-bottom: 12px;">
+        <div class="container-fluid">
+            <p class="navbar-brand text-center" style="color: white; font-size: 16px;">&copy; 2024 Re-Dact. All rights reserved.</p>
+        </div>
+    </footer>
 
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
