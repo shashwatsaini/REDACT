@@ -128,6 +128,10 @@ def index(request):
 
                     service = VideoRedactionService(degree, guardrail_toggle)
                     redacted_video_url, agents_speech = service.redact_video(video_url)
+
+                    # Check for flags
+                    if redacted_video_url == 'error':
+                        return render(request, 'index.html', {'error': 'Could not process the video at this time. Please try again later.'})
                     print(redacted_video_url)
 
                     return render(request, 'index.html', {'redacted_video_url': redacted_video_url, 'agents_speech': agents_speech})

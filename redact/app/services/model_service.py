@@ -389,7 +389,22 @@ class PDFRedactionService:
         return redacted_cords, page_dims
 
 class VideoRedactionService:
+    '''
+        The service for redacting faces in videos using Azure Video Indexer (VI).
 
+        __init___ inputs:
+            degree: Degree of redaction, as selected by client. Has no functionality yet.
+            guardrail_toggle: Whether guardrails should be turned on or not, default is 1. Has no functionality yet.
+        __init__ output:
+            A VideoRedactionService object.
+
+        redact_video inputs:
+            video: Inputted by the client.
+        redact_video outputs:
+            output_path: URL to the redacted video in VI.
+            agents_speech: Steps carried by agents and guardrails, to establish a logical flow for the client. Has no functionality yet.
+
+    '''
     def __init__(self, degree=0, guardrail_toggle=1):
         self.degree = degree
         self.guardrail_toggle = guardrail_toggle
@@ -444,7 +459,7 @@ class VideoRedactionService:
             if match:
                 vi_video_id = match.group(1)
             else:
-                return 'error', [] # TODO: Define flags for video upload errors in html
+                return 'error', []
 
         # Poll to check indexing
         vi_video_poll_request = requests.get(
@@ -453,13 +468,17 @@ class VideoRedactionService:
         )
 
         polling_count = 0
-        while (vi_video_poll_request.json().get('state') != "Processed" and polling_count < 10):
+        while (vi_video_poll_request.json().get('state') != "Processed" and polling_count < 60):
             time.sleep(10)
             vi_video_poll_request = requests.get(
                 url=f'https://api.videoindexer.ai/{settings.AZURE_VI_LOCATION}/Accounts/{settings.AZURE_VI_ID}/Videos/{vi_video_id}/Index?accessToken={vi_access_token}',
                 json=params
             )
             polling_count += 1
+            if vi_video_poll_request.json().get('state') == "Failed":
+                return 'error', []
+        if vi_video_poll_request.json().get('state') != "Processed":
+            return 'error', []
 
         # Redact the video (redacts faces)
         vi_redacted_video = video_name.replace('.mp4', '_redacted.mp4')
@@ -509,14 +528,17 @@ class VideoRedactionService:
         )
 
         polling_count = 0
-        while (vi_video_redacted_poll_request.json().get('state') != "Processed" and polling_count < 20):
+        while (vi_video_redacted_poll_request.json().get('state') != "Processed" and polling_count < 60):
             time.sleep(10)
             vi_video_redacted_poll_request = requests.get(
                 url=f'https://api.videoindexer.ai/{settings.AZURE_VI_LOCATION}/Accounts/{settings.AZURE_VI_ID}/Videos/{vi_video_redacted_id}/Index?accessToken={vi_video_redacted_access_token}',
                 json=params
             )
             polling_count += 1
-            print(polling_count)
+            if vi_video_redacted_poll_request.json().get('state') == "Failed":
+                return 'error', []
+        if vi_video_redacted_poll_request.json().get('state') != "Processed":
+            return 'error', []
 
         # Get a URL for the redacted video
         from urllib.parse import quote
