@@ -5,7 +5,7 @@ from django.core.files.base import ContentFile
 from django.http import JsonResponse
 from django.shortcuts import render, redirect
 from django.utils.text import slugify
-from .services.model_service import TextRedactionService, ImageRedactionService, PDFRedactionService
+from .services.model_service import TextRedactionService, ImageRedactionService, PDFRedactionService, VideoRedactionService
 from .services.model_training import train_model
 from django.conf import settings
 import re
@@ -120,6 +120,17 @@ def index(request):
                     redacted_file_url, agents_speech = service.redact_pdf(pdf_url, regexPattern, wordsToRemove)
 
                     return render(request, 'index.html', {'redacted_file_url': redacted_file_url, 'agents_speech': agents_speech})
+                
+                elif is_video_file(file.name):
+                    # Redacts videos
+                    video_url = os.path.join(settings.BASE_DIR, 'media', 'uploads', save_image_file(file))
+                    print(video_url)
+
+                    service = VideoRedactionService(degree, guardrail_toggle)
+                    redacted_video_url, agents_speech = service.redact_video(video_url)
+                    print(redacted_video_url)
+
+                    return render(request, 'index.html', {'redacted_video_url': redacted_video_url, 'agents_speech': agents_speech})
                 
         elif form_data.get('wordsTextarea'):
             # Redacts text from textarea

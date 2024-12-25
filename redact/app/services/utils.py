@@ -1,6 +1,9 @@
+import datetime
 import os
 import regex as re
 from azure.core.credentials import AzureKeyCredential
+from azure.identity import DefaultAzureCredential
+from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions
 from azure.ai.formrecognizer import DocumentAnalysisClient
 from django.conf import settings
 from PIL import Image, ImageDraw
@@ -42,6 +45,24 @@ def azure_pdf_ocr(pdf):
         result = poller.result()
     
     return result
+
+# Azure function to upload video to storage account
+def azure_upload_video(video_path):
+    video_name = os.path.basename(video_path)
+    storage_credential = DefaultAzureCredential()
+    blob_service_client = BlobServiceClient(account_url=settings.AZURE_STORAGE_URL, credential=storage_credential)
+    container_client = blob_service_client.get_container_client(settings.AZURE_STORAGE_CONTAINER)
+    user_delegation_key = blob_service_client.get_user_delegation_key(
+        key_start_time=datetime.datetime.now(datetime.timezone.utc),
+        key_expiry_time=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
+    )
+
+    with open(file=video_path, mode="rb") as video_file:
+        video_blob = container_client.upload_blob(name=video_name, data=video_file, overwrite=True)
+    
+    video_url = f'{settings.AZURE_STORAGE_URL}/{settings.AZURE_STORAGE_CONTAINER}/{video_name}'
+
+    return video_url
 
 # Function to extract Regex matches from text
 def match_regexPattern(text, regexPattern):

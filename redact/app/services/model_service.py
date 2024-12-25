@@ -1,7 +1,11 @@
+import os
+import re
+import time
 from .agents import TextRedactionAgents, ImageRedactionAgents, PDFRedactionAgents
 from .guardrails import guardrail_azure_cs_text, guardrail_azure_cs_image, guardrail_proper_nouns, guardrail_numbers, guardrail_urls, guardrail_emails
 from .db_service import uploadOutputDB
-from .utils import azure_image_ocr, azure_pdf_ocr, match_regexPattern, export_redacted_image, export_redacted_pdf
+from .utils import azure_image_ocr, azure_pdf_ocr, azure_upload_video, match_regexPattern, export_redacted_image, export_redacted_pdf
+from azure.identity import DefaultAzureCredential
 from django.conf import settings
 
 class TextRedactionService:
@@ -26,10 +30,7 @@ class TextRedactionService:
 
     def __init__(self, degree=0, guardrail_toggle=1):
         self.degree = degree
-        self.guardrail_toggle = 0
-        # Temporary: Toggling guardrails on for 3rd degree only
-        if degree == 2 and guardrail_toggle:
-            self.guardrail_toggle = 1
+        self.guardrail_toggle = guardrail_toggle
 
         self.assistant = TextRedactionAgents(degree).assistant
         self.degree0_list = TextRedactionAgents(degree).degree0_list
@@ -387,3 +388,147 @@ class PDFRedactionService:
         
         return redacted_cords, page_dims
 
+class VideoRedactionService:
+
+    def __init__(self, degree=0, guardrail_toggle=1):
+        self.degree = degree
+        self.guardrail_toggle = guardrail_toggle
+
+    def redact_video(self, video):
+        import requests
+
+        video_name = os.path.basename(video)
+        video_url = azure_upload_video(video)
+
+        # Get VI token
+        vi_default_credential = DefaultAzureCredential()
+        vi_scope = f'{settings.AZURE_VI_RESOURCE_MANAGER}/.default'
+        vi_token = vi_default_credential.get_token(vi_scope).token
+
+        # Get VI access token
+        headers = {
+            'Authorization': 'Bearer ' + vi_token,
+            'Content-Type': 'application/json'
+        }
+        params = {
+            'permissionType': 'Contributor',
+            'scope': 'Account'
+        }
+        vi_access_token_request = requests.post(
+            url=f'{settings.AZURE_VI_RESOURCE_MANAGER}/subscriptions/{settings.AZURE_VI_SUBSCRIPTION}/resourceGroups/{settings.AZURE_VI_RESOURCE_GROUP}/providers/Microsoft.VideoIndexer/accounts/{settings.AZURE_VI_NAME}/generateAccessToken?api-version=2024-01-01',
+            json=params,
+            headers=headers
+        )
+        vi_access_token = vi_access_token_request.json().get('accessToken')
+
+        # TEMPORARY: Delete all videos in VI
+        vi_get_videos_request = requests.get(
+            f'https://api.videoindexer.ai/{settings.AZURE_VI_LOCATION}/Accounts/{settings.AZURE_VI_ID}/Videos?accessToken={vi_access_token}'
+        )
+        for video in vi_get_videos_request.json().get('results'):
+            vi_video_delete_request = requests.delete(
+                url=f'https://api.videoindexer.ai/{settings.AZURE_VI_LOCATION}/Accounts/{settings.AZURE_VI_ID}/Videos/{video.get("id")}?accessToken={vi_access_token}'
+            )            
+
+        # Upload the video to VI
+        vi_video_upload_request = requests.post(
+            url=f'https://api.videoindexer.ai/{settings.AZURE_VI_LOCATION}/Accounts/{settings.AZURE_VI_ID}/Videos?name={video_name}&videoUrl={video_url}&privacy=public&accessToken={vi_access_token}',
+            json=params
+        )
+
+        vi_video_id = None
+        if vi_video_upload_request.status_code == 200:
+            vi_video_id = vi_video_upload_request.json().get('id')
+        else: # If video already exists
+            match = re.search(r"video id: '(\w+)'", vi_video_upload_request.json().get('Message'))
+            if match:
+                vi_video_id = match.group(1)
+            else:
+                return 'error', [] # TODO: Define flags for video upload errors in html
+
+        # Poll to check indexing
+        vi_video_poll_request = requests.get(
+            url=f'https://api.videoindexer.ai/{settings.AZURE_VI_LOCATION}/Accounts/{settings.AZURE_VI_ID}/Videos/{vi_video_id}/Index?accessToken={vi_access_token}',
+            json=params
+        )
+
+        polling_count = 0
+        while (vi_video_poll_request.json().get('state') != "Processed" and polling_count < 10):
+            time.sleep(10)
+            vi_video_poll_request = requests.get(
+                url=f'https://api.videoindexer.ai/{settings.AZURE_VI_LOCATION}/Accounts/{settings.AZURE_VI_ID}/Videos/{vi_video_id}/Index?accessToken={vi_access_token}',
+                json=params
+            )
+            polling_count += 1
+
+        # Redact the video (redacts faces)
+        vi_redacted_video = video_name.replace('.mp4', '_redacted.mp4')
+        params = {
+            "faces": {
+                "blurringKind": "LowBlur"
+            }
+        }
+        vi_video_redact_request = requests.post(
+            url=f'https://api.videoindexer.ai/{settings.AZURE_VI_LOCATION}/Accounts/{settings.AZURE_VI_ID}/Videos/{vi_video_id}/redact?name={vi_redacted_video}&accessToken={vi_access_token}',
+            json=params
+        )
+        
+        # Find the id for the redacted video
+        vi_get_videos_request = requests.get(
+            f'https://api.videoindexer.ai/{settings.AZURE_VI_LOCATION}/Accounts/{settings.AZURE_VI_ID}/Videos?accessToken={vi_access_token}'
+        )
+        vi_video_redacted_id = None
+        for video in vi_get_videos_request.json().get('results'):
+            if video.get('name') == vi_redacted_video:
+                vi_video_redacted_id = video.get('id')
+                break
+
+        # Get an access token for the redacted video
+        headers = {
+            'Authorization': 'Bearer ' + vi_token,
+            'Content-Type': 'application/json'
+        }
+
+        params = {
+            'permissionType': 'Contributor',
+            'scope': 'Video',
+            'videoId': vi_video_redacted_id
+        }
+
+        vi_video_redacted_access_token_request = requests.post(
+            url=f'{settings.AZURE_VI_RESOURCE_MANAGER}/subscriptions/{settings.AZURE_VI_SUBSCRIPTION}/resourceGroups/{settings.AZURE_VI_RESOURCE_GROUP}/providers/Microsoft.VideoIndexer/accounts/{settings.AZURE_VI_NAME}/generateAccessToken?api-version=2024-01-01',
+            json=params,
+            headers=headers
+        )
+        vi_video_redacted_access_token = vi_video_redacted_access_token_request.json().get('accessToken')
+
+        # Poll for redacted video indexing
+        vi_video_redacted_poll_request = requests.get(
+            url=f'https://api.videoindexer.ai/{settings.AZURE_VI_LOCATION}/Accounts/{settings.AZURE_VI_ID}/Videos/{vi_video_redacted_id}/Index?accessToken={vi_video_redacted_access_token}',
+            json=params
+        )
+
+        polling_count = 0
+        while (vi_video_redacted_poll_request.json().get('state') != "Processed" and polling_count < 20):
+            time.sleep(10)
+            vi_video_redacted_poll_request = requests.get(
+                url=f'https://api.videoindexer.ai/{settings.AZURE_VI_LOCATION}/Accounts/{settings.AZURE_VI_ID}/Videos/{vi_video_redacted_id}/Index?accessToken={vi_video_redacted_access_token}',
+                json=params
+            )
+            polling_count += 1
+            print(polling_count)
+
+        # Get a URL for the redacted video
+        from urllib.parse import quote
+        vi_video_redacted_download_request = requests.get(
+            f'https://api.videoindexer.ai/{settings.AZURE_VI_LOCATION}/Accounts/{settings.AZURE_VI_ID}/Videos/{vi_video_redacted_id}/SourceFile/DownloadUrl?accessToken={vi_video_redacted_access_token}'
+        )        
+        vi_video_redacted_url = vi_video_redacted_download_request.json().replace(vi_redacted_video, quote(vi_redacted_video))
+
+        # Delete original video from VI when done
+        vi_video_delete_request = requests.delete(
+            url=f'https://api.videoindexer.ai/{settings.AZURE_VI_LOCATION}/Accounts/{settings.AZURE_VI_ID}/Videos/{vi_video_id}?accessToken={vi_access_token}'
+        )
+
+        return vi_video_redacted_url, []
+            

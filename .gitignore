@@ -79,10 +79,7 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
-Notebooks/test files/*
-Notebooks/test files
-Notebooks/video.ipynb
-Notebooks/*.mp4
+Notebooks*
 
 # IPython
 profile_default/
