@@ -1,10 +1,10 @@
 import os
 import re
 import time
-from .agents import TextRedactionAgents, ImageRedactionAgents, PDFRedactionAgents
+from .agents import TextRedactionAgents, ImageRedactionAgents, PDFRedactionAgents, AudioRedactionAgents
 from .guardrails import guardrail_azure_cs_text, guardrail_azure_cs_image, guardrail_proper_nouns, guardrail_numbers, guardrail_urls, guardrail_emails
 from .db_service import uploadOutputDB
-from .utils import azure_image_ocr, azure_pdf_ocr, azure_upload_video, match_regexPattern, export_redacted_image, export_redacted_pdf
+from .utils import azure_image_ocr, azure_pdf_ocr, azure_speech_to_text, azure_upload_video, match_regexPattern, export_redacted_image, export_redacted_pdf, export_redacted_audio
 from azure.identity import DefaultAzureCredential
 from django.conf import settings
 
@@ -290,7 +290,7 @@ class PDFRedactionService:
         result = azure_pdf_ocr(pdf)
         word_list = result.content.split()
         redacted_list = []
-        output_db_list = [] # Stores outputs for improvingm models
+        output_db_list = [] # Stores outputs for improving models
         redacted_list_from_agent = [] + [j for i in wordsToRemove for j in i.split()]
 
         content_safety_flag = guardrail_azure_cs_text(word_list)
@@ -387,6 +387,121 @@ class PDFRedactionService:
             redacted_cords.append(redacted_cords_page)
         
         return redacted_cords, page_dims
+
+
+class AudioRedactionService:
+    """
+        The service for redacting audio files.
+
+        __init___ inputs:
+            degree: Degree of redaction, as selected by client.
+            guardrail_toggle: Whether guardrails should be turned on or not, default is 1.
+        __init__ output:
+            An AudioRedactionService object.
+
+        redact_audio inputs:
+            audio: Entered by the client.
+            wordsToRemove: Custom words to redact, if entered by the client. Has no functionality yet.
+        redact_audio outputs:
+            output_path: Path to the redacted audio file.
+            agents_speech: Steps carried by agents and guardrails, to establish a logical flow for the client.
+
+    """
+
+    def __init__(self, degree=0, guardrail_toggle=1):
+        self.degree = degree
+        self.guardrail_toggle = guardrail_toggle
+
+        self.assistant = AudioRedactionAgents(degree).assistant
+        self.degree0_list = AudioRedactionAgents(degree).degree0_list
+        self.degree1_list = AudioRedactionAgents(degree).degree1_list
+        self.degree2_list = AudioRedactionAgents(degree).degree2_list
+
+    def redact_audio(self, audio, wordsToRemove=[]):    
+        result, transcription_json = azure_speech_to_text(audio) # Transcription json contains the transcript along with timestamps
+        word_list = result.split()
+        redacted_list = []
+        redacted_list_from_agent = []
+        output_db_list = [] # Stores outputs for improving models
+
+        content_safety_flag = guardrail_azure_cs_text(word_list)
+        if content_safety_flag:
+            return 'flag', []
+        
+        raw_redacted_list_from_agent = self.assistant(result, aggregation_strategy="first")
+        for entity in raw_redacted_list_from_agent:
+            if self.degree == 0:
+                if entity['entity_group'] in self.degree0_list:
+                    redacted_list_from_agent += entity['word'].strip().split()
+            elif self.degree == 1:
+                if entity['entity_group'] in self.degree0_list + self.degree1_list:
+                    redacted_list_from_agent += entity['word'].strip().split()
+            elif self.degree == 2:
+                if entity['entity_group'] in self.degree0_list + self.degree1_list + self.degree2_list:
+                    redacted_list_from_agent += entity['word'].strip().split()
+            # Appending to Output DB List
+            output_db_list.append({
+                'word': entity['word'],
+                'label': 'B-' + entity['entity_group'] # Adding B- prefix to entity_group
+            })
+            output_db_list.append({
+                'word': entity['word'],
+                'label': 'I-' + entity['entity_group'] # Adding I- prefix to entity_group
+            })
+        
+        redacted_list_from_agent = list(set(redacted_list_from_agent))
+        uploadOutputDB(output_db_list)
+
+        # Return chat history
+        agents_speech = []
+        agents_speech.append('<h4>' + 'assistant' + '</h4>')
+        agents_speech.append('<p>Redacting words: ' + str(redacted_list_from_agent) + '</p>')
+
+        # Guardrails are called only for last degree
+        if self.guardrail_toggle:
+            redacted_list, agents_speech = self.guardrails(redacted_list_from_agent, word_list, agents_speech)
+        else:
+            redacted_list = redacted_list_from_agent
+        redacted_list = sorted(redacted_list, key=len, reverse=True)
+
+        # Extract redacted words and their timestamps
+        redacted_timestamps = self.extract_redacted_words_timestamps(redacted_list, transcription_json)
+
+        # Export redacted audio
+        output_path = export_redacted_audio(audio, redacted_timestamps)
+        
+        return output_path, agents_speech
+    
+    # Guardrails are called only for last degree
+    def guardrails(self, redacted_list_from_agent, word_list, agents_speech):
+        redacted_list_no_proper_nouns = guardrail_proper_nouns(word_list)
+        redacted_list_no_numbers = guardrail_numbers(word_list)
+        redacted_list_no_urls = guardrail_urls(word_list)
+        redacted_list_no_emails = guardrail_emails(word_list)
+        redacted_list = list(set(redacted_list_from_agent + redacted_list_no_proper_nouns + redacted_list_no_numbers + redacted_list_no_urls + redacted_list_no_emails))
+
+        agents_speech.append('<h4>' + 'guardrail: redacting proper nouns' + '</h4>')
+        agents_speech.append('<p>Redacting Proper Nouns: ' + str(redacted_list_no_proper_nouns) + '</p>')
+        agents_speech.append('<h4>' + 'guardrail: redacting numbers' + '</h4>')
+        agents_speech.append('<p>Redacting Numbers: ' + str(redacted_list_no_numbers) + '</p>')
+        agents_speech.append('<h4>' + 'guardrail: redacting urls' + '</h4>')
+        agents_speech.append('<p>Redacting URLs: ' + str(redacted_list_no_urls) + '</p>')
+        agents_speech.append('<h4>' + 'guardrail: redacting emails' + '</h4>')
+        agents_speech.append('<p>Redacting Emails: ' + str(redacted_list_no_emails) + '</p>')
+
+        return redacted_list, agents_speech
+    
+    # Extract redacted words and their timestamps
+    def extract_redacted_words_timestamps(self, redacted_list, transcription_json):
+        redacted_timestamps = []
+        for phrase in transcription_json['phrases']:
+            for word in phrase['words']:
+                for redacted_word in redacted_list:
+                    if redacted_word in word['text'] or redacted_word.strip() in word['text'].strip():
+                        redacted_timestamps.append((word['offsetMilliseconds'], word['offsetMilliseconds'] + word['durationMilliseconds']))
+        
+        return redacted_timestamps
+    
 
 class VideoRedactionService:
     '''

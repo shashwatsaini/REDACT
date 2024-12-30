@@ -5,7 +5,7 @@ from django.core.files.base import ContentFile
 from django.http import JsonResponse
 from django.shortcuts import render, redirect
 from django.utils.text import slugify
-from .services.model_service import TextRedactionService, ImageRedactionService, PDFRedactionService, VideoRedactionService
+from .services.model_service import TextRedactionService, ImageRedactionService, PDFRedactionService, AudioRedactionService, VideoRedactionService
 from .services.model_training import train_model
 from django.conf import settings
 import re
@@ -35,6 +35,10 @@ def is_pdf_file(file_name):
 
 def is_document_file(file_name):
     document_extensions = ['.txt']
+    return any(file_name.lower().endswith(ext) for ext in document_extensions)
+
+def is_audio_file(file_name):
+    document_extensions = ['.wav', '.mp3']
     return any(file_name.lower().endswith(ext) for ext in document_extensions)
 
 def is_video_file(file_name):
@@ -120,6 +124,16 @@ def index(request):
                     redacted_file_url, agents_speech = service.redact_pdf(pdf_url, regexPattern, wordsToRemove)
 
                     return render(request, 'index.html', {'redacted_file_url': redacted_file_url, 'agents_speech': agents_speech})
+                
+                elif is_audio_file(file.name):
+                    # Redacts audio
+                    audio_url = os.path.join(settings.BASE_DIR, 'media', 'uploads', save_image_file(file))
+                    print(audio_url)
+
+                    service = AudioRedactionService(degree, guardrail_toggle)
+                    redacted_audio_url, agents_speech = service.redact_audio(audio_url)
+
+                    return render(request, 'index.html', {'redacted_audio_url': redacted_audio_url, 'agents_speech': agents_speech})
                 
                 elif is_video_file(file.name):
                     # Redacts videos

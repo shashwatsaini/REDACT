@@ -105,7 +105,7 @@
                                 <div class="droparea darkgradient-2 d-flex align-items-center justify-content-center" id="dropArea" style="height: 400px; position: relative;">
                                     <i class="fa-solid fa-folder-plus" id="folderIcon" style="font-size: 3rem; color: #fff;"></i>
                                     <div class="preview-container" id="previewContainer" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></div>
-                                    <input type="file" name="files" id="fileInput" multiple accept=".png, .jpg, .mp4, .jpeg, .txt, .pdf" style="display: none;">
+                                    <input type="file" name="files" id="fileInput" multiple accept=".txt, .pdf, .png, .jpg, .jpeg, .wav, .mp3, .mp4" style="display: none;">
                                     <label for="fileInput" class="btn btn-outline-light mt-2">Supports text files, PDFs, and videos.</label>
                                 </div>
                             </div>
@@ -124,17 +124,7 @@
                         </div>
                     
                         <!-- Second Row: Toggles and Advanced Options Button -->
-                        <div class="col-md-12 d-flex justify-content-center align-items-center mb-4">
-                            <!-- Left Toggle: Add synthetic data -->
-                            <div class="d-flex align-items-center me-5" style="padding-right: 15px;">
-                                <span style="color: white; font-weight: bold;">Add Synthetic Data</span>
-                                <label class="toggle-switch ms-2">
-                                    <input type="checkbox" name="syntheticData">
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-                        
-                            <!-- Right Toggle: Processing Overview -->
+                        <div class="col-md-12 d-flex justify-content-center align-items-center mb-4">                        
                             <div class="d-flex align-items-center me-5" style="padding-right: 15px;">
                                 <span style="color: white; font-weight: bold;">Processing Overview</span>
                                 <label class="toggle-switch ms-2">
@@ -143,7 +133,6 @@
                                 </label>
                             </div>
                         
-                            <!-- Center: Advanced Options Button -->
                             <div class="text-center" style="margin-left: 10px;">
                                 <button class="btn btn-outline-light btn-lg" type="button" data-bs-toggle="modal" data-bs-target="#advancedOptionsModal">
                                     Advanced Options
@@ -190,7 +179,7 @@
             </div>
 
             <!-- Output Section -->
-            {% if redacted_text or redacted_file_url or redacted_image_url or redacted_video_url %}
+            {% if redacted_text or redacted_file_url or redacted_image_url or redacted_audio_url or redacted_video_url %}
             <br><br>
             <div class="card dark-card text-white p-4 mx-auto d-flex justify-content-center align-items-center" style="max-width: 1200px;">
                 {% if redacted_text %}
@@ -214,6 +203,17 @@
                         <img src="{{ redacted_image_url }}" alt="Redacted Image" class="img-fluid"/>
                         <br><br>
                         <a href="{{ redacted_image_url }}" download>Download Redacted Image</a>
+                    </div>
+                </div>
+                {% elif redacted_audio_url %}
+                <div class="col-12 text-center">
+                    <div class="mb-3">
+                        <audio controls class="audioPreview">
+                            <source src="{{ redacted_audio_url }}" type="audio/mpeg">
+                            Your browser does not support the audio element.
+                        </audio>
+                        <br><br>
+                        <a href="{{ redacted_audio_url }}" download>Download Redacted Audio</a>
                     </div>
                 </div>
                 {% elif redacted_video_url %}
@@ -254,7 +254,7 @@
         </div>
 
         <div class="text-container">
-            <div class="oval-card">
+            <div class="oval-card" style="background-color: #f8f8f8;">
                 <div class="header-row">
                     <h1 class="redact-header" style="letter-spacing: 1px;">Our commitment to Ethical AI</h1>
                     <i class="fa-solid fa-wand-magic-sparkles fa-2x" style="color: black;"></i>
@@ -269,7 +269,7 @@
     
             <br><br>
     
-            <div class="oval-card">
+            <div class="oval-card" style="background-color: #f8f8f8;">
                 <div class="header-row">
                     <h1 class="redact-header" style="letter-spacing: 1px;">About Us</h1>
                     <i class="fa-solid fa-pen-nib fa-2x" style="color: black;"></i>
@@ -384,6 +384,16 @@
                         previewItem.appendChild(div);
                         previewItem.appendChild(cancelButton);
                         previewContainer.appendChild(previewItem);
+                    } else if (file.type.startsWith('audio/')) {
+                        reader.onload = function(event) {
+                            const audio = document.createElement('audio');
+                            audio.controls = true;
+                            audio.src = event.target.result;
+                            previewItem.appendChild(audio);
+                            previewItem.appendChild(cancelButton);
+                            previewContainer.appendChild(previewItem);
+                        };
+                        reader.readAsDataURL(file);
                     } else if (file.type === 'text/plain') {
                         const div = document.createElement('div');
                         div.textContent = `TXT: ${file.name}`;
